@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Shield, Sparkles } from 'lucide-react';
+import { Shield, Sparkles, LogOut, Key, UserCheck } from 'lucide-react';
 import { useSocket } from './hooks/useSocket';
 import { StatsBar } from './dashboard/StatsBar';
 import { LiveMap } from './dashboard/LiveMap';
@@ -10,6 +10,13 @@ import { DemoButton } from './dashboard/DemoButton';
 
 export default function App() {
   const { socket, connected } = useSocket();
+
+  // Authentication State
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [badgeId, setBadgeId] = useState('');
+  const [pin, setPin] = useState('');
+  const [role, setRole] = useState('dispatcher');
+  const [loginError, setLoginError] = useState('');
 
   const [requests, setRequests] = useState<any[]>([]);
   const [resources, setResources] = useState<any[]>([]);
@@ -30,7 +37,21 @@ export default function App() {
     circuitsRestored: 0
   });
 
-  // Fetch initial data from server
+  // Handle Login Validation
+  const handleLogin = () => {
+    if (!badgeId.trim()) {
+      setLoginError('Please enter a valid Badge ID.');
+      return;
+    }
+    if (pin === '9999' || pin === '1111' || pin === '0000') {
+      setIsAuthenticated(true);
+      setLoginError('');
+    } else {
+      setLoginError('Invalid Access PIN. Use a Demo Auto-Fill below for instant login.');
+    }
+  };
+
+  // Fetch initial data from server (with robust mock fallbacks for live GitHub Pages)
   const fetchInitialData = async () => {
     try {
       const urls = [
@@ -42,14 +63,56 @@ export default function App() {
       ];
 
       const [statsRes, resRes, reqRes, crewRes, circRes] = await Promise.all(
-        urls.map((url) => fetch(url).then((r) => (r.ok ? r.json() : null)))
+        urls.map((url) => fetch(url).then((r) => (r.ok ? r.json() : null)).catch(() => null))
       );
 
-      if (statsRes) setStats(statsRes);
-      if (resRes) setResources(resRes);
-      if (reqRes) setRequests(reqRes);
-      if (crewRes) setCrews(crewRes);
-      if (circRes) setCircuits(circRes);
+      if (statsRes) {
+        setStats(statsRes);
+      } else {
+        setStats({
+          totalRequests: 2,
+          totalMatched: 4,
+          peopleHelped: 54,
+          circuitsRestored: 2
+        });
+      }
+
+      if (resRes) {
+        setResources(resRes);
+      } else {
+        setResources([
+          { id: 1, name: 'Vanderbilt Medical Center', type: 'hospital', latitude: 36.1432, longitude: -86.8005, has_power: true, has_food: true, has_water: true },
+          { id: 2, name: 'East Nashville Shelter', type: 'shelter', latitude: 36.1889, longitude: -86.7442, has_power: false, has_food: true, has_water: true },
+          { id: 3, name: 'Nashville Food Bank', type: 'food_bank', latitude: 36.1555, longitude: -86.7725, has_power: true, has_food: true, has_water: false }
+        ]);
+      }
+
+      if (reqRes && reqRes.length > 0) {
+        setRequests(reqRes);
+      } else {
+        setRequests([
+          { id: 'req-1', raw_message: 'Elderly resident needs medicine delivery near Edgehill', medical_priority: true, source_channel: 'sms', latitude: 36.1382, longitude: -86.7905 },
+          { id: 'req-2', raw_message: 'Large tree limbs blocking road on Main St', medical_priority: false, source_channel: 'whatsapp', latitude: 36.1754, longitude: -86.7588 }
+        ]);
+      }
+
+      if (crewRes && crewRes.length > 0) {
+        setCrews(crewRes);
+      } else {
+        setCrews([
+          { id: 1, name: 'NES Tree Crew A', type: 'tree', status: 'en_route', latitude: 36.1724, longitude: -86.7621 },
+          { id: 2, name: 'NES Electrical Team 3', type: 'electrical', status: 'idle', latitude: 36.1502, longitude: -86.7854 }
+        ]);
+      }
+
+      if (circRes && circRes.length > 0) {
+        setCircuits(circRes);
+      } else {
+        setCircuits([
+          { id: 1, circuit_name: 'Circ 4A - Downtown', is_outage: true, priority_score: 9.2, failure_probability: 0.88, path: [[36.1627, -86.7816], [36.1502, -86.7854]] },
+          { id: 2, circuit_name: 'Circ 8 - East Nashville', is_outage: false, priority_score: 1.5, failure_probability: 0.12, path: [[36.1889, -86.7442], [36.1754, -86.7588]] }
+        ]);
+      }
     } catch (err) {
       console.error('Error fetching initial dashboard data:', err);
     }
@@ -69,18 +132,17 @@ export default function App() {
       const newActivity: ActivityType = {
         id: Math.random().toString(),
         event_type: 'new_message',
-        title: `Message: ${data.user.name}`,
+        title: `Message: ${data.user?.name || 'Inbound'}`,
         description: data.body,
-        urgency: data.intent.urgency || 1,
+        urgency: data.intent?.urgency || 1,
         channel: data.channel,
         created_at: new Date().toISOString()
       };
 
       setActivities((prev) => [newActivity, ...prev]);
 
-      // If it is a need request, add to requests array
-      if (data.intent.signal_type === 'need_request') {
-        fetchInitialData(); // Re-fetch to ensure synced database state
+      if (data.intent?.signal_type === 'need_request') {
+        fetchInitialData();
       }
     });
 
@@ -104,7 +166,7 @@ export default function App() {
         id: Math.random().toString(),
         event_type: 'offer_created',
         title: 'New Aid Offer',
-        description: `Helper offered ${data.offer.help_type}: "${data.offer.description}"`,
+        description: `Helper offered ${data.offer?.help_type}: "${data.offer?.description}"`,
         urgency: 2,
         created_at: new Date().toISOString()
       };
@@ -118,7 +180,7 @@ export default function App() {
         id: Math.random().toString(),
         event_type: 'road_report',
         title: 'Road Hazard Reported',
-        description: `${data.report.hazard_type.toUpperCase()} reported: "${data.report.report_text}"`,
+        description: `${data.report?.hazard_type.toUpperCase()} reported: "${data.report?.report_text}"`,
         urgency: 4,
         created_at: new Date().toISOString()
       };
@@ -167,7 +229,6 @@ export default function App() {
   // Generate synthetic ML predictions for map when toggled
   useEffect(() => {
     if (showMLHeatmap) {
-      // Mock ML XGBoost failure zone outputs
       const mockPredictions = [
         { circuit_name: 'Circ 4A - Downtown', latitude: 36.1627, longitude: -86.7816, probability: 0.88 },
         { circuit_name: 'Circ 12 - Oak Hill', latitude: 36.1138, longitude: -86.7740, probability: 0.65 },
@@ -179,8 +240,144 @@ export default function App() {
     }
   }, [showMLHeatmap]);
 
+  // Render Login portal if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#060814] text-gray-100 flex items-center justify-center p-4 overflow-hidden relative font-sans">
+        {/* Decorative ambient gradient blobs */}
+        <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-red-600/10 rounded-full blur-[140px] pointer-events-none"></div>
+        <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-[140px] pointer-events-none"></div>
+
+        {/* Tech grid lines */}
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff03_1px,transparent_1px),linear-gradient(to_bottom,#ffffff03_1px,transparent_1px)] bg-[size:32px_32px] pointer-events-none"></div>
+
+        <div className="w-full max-w-md relative z-10">
+          {/* Logo Brand Header */}
+          <div className="flex flex-col items-center mb-8">
+            <div className="p-4 bg-gradient-to-tr from-red-600 to-amber-500 rounded-3xl shadow-xl shadow-red-500/20 border border-white/10 mb-4">
+              <Shield className="w-10 h-10 text-white" />
+            </div>
+            <h1 className="text-3xl font-black tracking-wider bg-gradient-to-r from-red-400 via-amber-400 to-amber-500 bg-clip-text text-transparent">
+              ARIA COMMAND
+            </h1>
+            <p className="text-[10px] text-gray-500 tracking-widest uppercase mt-1.5 font-bold">
+              Crisis Coordination Dashboard
+            </p>
+          </div>
+
+          {/* Login Card Container */}
+          <div className="bg-white/5 backdrop-blur-2xl border border-white/10 p-8 rounded-3xl shadow-2xl">
+            <h2 className="text-base font-bold mb-6 text-center text-gray-300 tracking-wide uppercase flex items-center justify-center gap-2">
+              <Key className="w-4 h-4 text-amber-400" /> Operator Authorization
+            </h2>
+
+            {loginError && (
+              <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs p-3 rounded-xl mb-4 text-center">
+                ⚠️ {loginError}
+              </div>
+            )}
+
+            <div className="space-y-5">
+              {/* Role SELECTOR */}
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 block mb-2 uppercase tracking-wider">Operator Role</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'dispatcher', label: 'Admin' },
+                    { id: 'responder', label: 'Crew Lead' },
+                    { id: 'volunteer', label: 'Volunteer' }
+                  ].map((r) => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => setRole(r.id)}
+                      className={`py-2.5 rounded-xl border text-[11px] font-bold transition duration-200 ${
+                        role === r.id
+                          ? 'bg-amber-500/20 border-amber-500 text-amber-300'
+                          : 'bg-white/5 border-white/5 text-gray-400 hover:bg-white/10'
+                      }`}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Badge ID Input */}
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 block mb-2 uppercase tracking-wider">Badge ID / Identifier</label>
+                <input
+                  type="text"
+                  placeholder="e.g. ADMIN-NASH"
+                  value={badgeId}
+                  onChange={(e) => setBadgeId(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500 text-white placeholder-gray-600 transition"
+                />
+              </div>
+
+              {/* Access PIN Input */}
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 block mb-2 uppercase tracking-wider">Access PIN</label>
+                <input
+                  type="password"
+                  placeholder="••••"
+                  maxLength={4}
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500 text-white placeholder-gray-600 text-center tracking-widest transition"
+                />
+              </div>
+
+              {/* Action Button */}
+              <button
+                type="button"
+                onClick={handleLogin}
+                className="w-full mt-2 py-3.5 bg-gradient-to-r from-red-600 to-amber-500 hover:from-red-500 hover:to-amber-400 text-white text-xs font-black rounded-xl shadow-lg shadow-red-500/25 transition transform hover:-translate-y-0.5 active:translate-y-0 tracking-wider uppercase"
+              >
+                Initialize Command Session
+              </button>
+            </div>
+
+            {/* Quick Demo Credentials */}
+            <div className="mt-8 border-t border-white/5 pt-6">
+              <p className="text-[9px] font-bold text-gray-500 tracking-widest uppercase text-center mb-3 flex items-center justify-center gap-1.5">
+                <UserCheck className="w-3.5 h-3.5 text-amber-500/70" /> Demo Credentials Quick Auto-Fill
+              </p>
+              <div className="flex flex-col gap-2">
+                {[
+                  { name: 'City Coordinator (Admin)', badge: 'ADMIN-NASH', pin: '9999', role: 'dispatcher' },
+                  { name: 'NES Field Crew (Responder)', badge: 'CREW-DISP', pin: '1111', role: 'responder' }
+                ].map((demo, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      setBadgeId(demo.badge);
+                      setPin(demo.pin);
+                      setRole(demo.role);
+                      setLoginError('');
+                    }}
+                    className="flex items-center justify-between p-2.5 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/10 transition text-left"
+                  >
+                    <div>
+                      <div className="text-xs font-bold text-gray-300">{demo.name}</div>
+                      <div className="text-[10px] text-gray-500">Badge: {demo.badge} | PIN: {demo.pin}</div>
+                    </div>
+                    <span className="text-[9px] font-bold px-2 py-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 uppercase tracking-wide">
+                      Select
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-brand-dark text-gray-100 flex flex-col p-4 md:p-6 gap-6">
+    <div className="min-h-screen bg-brand-dark text-gray-100 flex flex-col p-4 md:p-6 gap-6 font-sans">
       {/* Top Navigation / Brand */}
       <header className="flex flex-col md:flex-row items-center justify-between border-b border-white/5 pb-4 gap-4">
         <div className="flex items-center gap-3">
@@ -201,7 +398,7 @@ export default function App() {
         </div>
 
         {/* Filters / Toggles */}
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2 bg-white/5 border border-white/5 px-3 py-1.5 rounded-xl">
             <input
               type="checkbox"
@@ -230,10 +427,22 @@ export default function App() {
 
           <div className="flex items-center gap-2">
             <span className={`h-2.5 w-2.5 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'} inline-block`}></span>
-            <span className="text-[10px] font-bold text-gray-400 tracking-wider">
-              {connected ? 'SYSTEM ONLINE' : 'CONNECTION OFFLINE'}
+            <span className="text-[10px] font-bold text-gray-400 tracking-wider uppercase">
+              {connected ? 'ONLINE' : 'OFFLINE'}
             </span>
           </div>
+
+          {/* Logout Button */}
+          <button
+            onClick={() => {
+              setIsAuthenticated(false);
+              setBadgeId('');
+              setPin('');
+            }}
+            className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl border border-red-500/20 hover:bg-red-500/10 text-red-400 transition"
+          >
+            <LogOut className="w-3.5 h-3.5" /> Logout
+          </button>
         </div>
       </header>
 
