@@ -1,7 +1,12 @@
 import { useState } from 'react';
 import { Play, RotateCcw, AlertTriangle } from 'lucide-react';
 
-export function DemoButton() {
+interface DemoButtonProps {
+  onLocalRun?: () => void;
+  onLocalReset?: () => void;
+}
+
+export function DemoButton({ onLocalRun, onLocalReset }: DemoButtonProps) {
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -15,11 +20,24 @@ export function DemoButton() {
       if (res.ok) {
         setStatus('Scenario running...');
       } else {
-        setStatus('Demo failed to start');
+        // Fallback to local simulation
+        if (onLocalRun) {
+          onLocalRun();
+          setStatus('Scenario running (Local simulation)...');
+        } else {
+          setStatus('Demo failed to start');
+          setRunning(false);
+        }
       }
     } catch (error) {
-      console.error('Error starting demo:', error);
-      setStatus('Connection error');
+      console.warn('Backend offline, using local simulation runner fallback:', error);
+      if (onLocalRun) {
+        onLocalRun();
+        setStatus('Scenario running (Local simulation)...');
+      } else {
+        setStatus('Connection error');
+        setRunning(false);
+      }
     }
   };
 
@@ -33,11 +51,23 @@ export function DemoButton() {
         setStatus('Demo environment reset successfully');
         window.location.reload();
       } else {
-        setStatus('Reset failed');
+        if (onLocalReset) {
+          onLocalReset();
+          setStatus('Demo environment reset successfully (Local reset)');
+          setRunning(false);
+        } else {
+          setStatus('Reset failed');
+        }
       }
     } catch (error) {
-      console.error('Error resetting demo:', error);
-      setStatus('Connection error');
+      console.warn('Backend offline, using local simulation reset fallback:', error);
+      if (onLocalReset) {
+        onLocalReset();
+        setStatus('Demo environment reset successfully (Local reset)');
+        setRunning(false);
+      } else {
+        setStatus('Connection error');
+      }
     }
   };
 

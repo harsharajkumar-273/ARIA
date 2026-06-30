@@ -51,6 +51,129 @@ export default function App() {
     }
   };
 
+  // Local Mock Signal Inbound Injector
+  const handleLocalInject = (body: string, phone: string, channel: string) => {
+    // 1. Add to activity feed
+    const mockActivity: ActivityType = {
+      id: Math.random().toString(),
+      event_type: 'new_message',
+      title: `Mock Message: ${phone}`,
+      description: body,
+      urgency: body.toLowerCase().includes('scared') || body.toLowerCase().includes('emergency') ? 4 : 2,
+      channel: channel,
+      created_at: new Date().toISOString()
+    };
+    setActivities((prev) => [mockActivity, ...prev]);
+
+    // 2. Add to active requests
+    const newReq = {
+      id: 'req-' + Math.random().toString(36).substr(2, 5),
+      raw_message: body,
+      medical_priority: body.toLowerCase().includes('scared') || body.toLowerCase().includes('medicine'),
+      source_channel: channel,
+      latitude: 36.1627 + (Math.random() - 0.5) * 0.05,
+      longitude: -86.7816 + (Math.random() - 0.5) * 0.05
+    };
+    setRequests((prev) => [newReq, ...prev]);
+
+    // 3. Update stats
+    setStats((prev) => ({
+      ...prev,
+      totalRequests: prev.totalRequests + 1
+    }));
+  };
+
+  // Local Demo Scenario Simulator
+  const handleLocalDemoRun = () => {
+    // Clear previous requests
+    setRequests([]);
+
+    // Step 1: Citizen SOS
+    const sms = "I am 78 years old no food since yesterday no heat I cannot leave my apartment I am very scared";
+    handleLocalInject(sms, "+15559990001", "sms");
+
+    // Step 2: Matches Dispatch (after 3 seconds)
+    setTimeout(() => {
+      const matchActivity: ActivityType = {
+        id: Math.random().toString(),
+        event_type: 'match_created',
+        title: 'Need Matched (Local Sim)',
+        description: 'Matched food, shelter, and warmth with Faith Community Center.',
+        urgency: 3,
+        created_at: new Date().toISOString()
+      };
+      setActivities((prev) => [matchActivity, ...prev]);
+
+      const volunteerMsg: ActivityType = {
+        id: Math.random().toString(),
+        event_type: 'new_message',
+        title: '[MOCK SMS] to +15551003003',
+        description: 'New job: deliver food to Nashville Area. Reply GO to accept.',
+        urgency: 2,
+        channel: 'sms',
+        created_at: new Date().toISOString()
+      };
+      setActivities((prev) => [volunteerMsg, ...prev]);
+
+      setStats((prev) => ({
+        ...prev,
+        totalMatched: prev.totalMatched + 3,
+        totalRequests: 0
+      }));
+    }, 3000);
+
+    // Step 3: Delivery Confirmation (after 6 seconds)
+    setTimeout(() => {
+      const deliveryActivity: ActivityType = {
+        id: Math.random().toString(),
+        event_type: 'demo_complete',
+        title: 'Crisis Cleared (Local Sim)',
+        description: 'Citizen +15559990001 safe. 3 matches resolved. Trust tier upgraded to 4.',
+        urgency: 5,
+        created_at: new Date().toISOString()
+      };
+      setActivities((prev) => [deliveryActivity, ...prev]);
+
+      // Update crews
+      setCrews([
+        { id: 1, name: 'NES Tree Crew A', type: 'tree', status: 'completed', latitude: 36.1724, longitude: -86.7621 },
+        { id: 2, name: 'NES Electrical Team 3', type: 'electrical', status: 'idle', latitude: 36.1502, longitude: -86.7854 }
+      ]);
+
+      // Update circuits
+      setCircuits([
+        { id: 1, circuit_name: 'Circ 4A - Downtown', is_outage: false, priority_score: 0.0, failure_probability: 0.05, path: [[36.1627, -86.7816], [36.1502, -86.7854]] },
+        { id: 2, circuit_name: 'Circ 8 - East Nashville', is_outage: false, priority_score: 1.5, failure_probability: 0.12, path: [[36.1889, -86.7442], [36.1754, -86.7588]] }
+      ]);
+
+      setStats((prev) => ({
+        ...prev,
+        peopleHelped: prev.peopleHelped + 1,
+        circuitsRestored: prev.circuitsRestored + 1
+      }));
+    }, 6000);
+  };
+
+  // Local Demo Reset
+  const handleLocalDemoReset = () => {
+    setRequests([]);
+    setActivities([]);
+    setCrews([
+      { id: 1, name: 'NES Tree Crew A', type: 'tree', status: 'en_route', latitude: 36.1724, longitude: -86.7621 },
+      { id: 2, name: 'NES Electrical Team 3', type: 'electrical', status: 'idle', latitude: 36.1502, longitude: -86.7854 }
+    ]);
+    setCircuits([
+      { id: 1, circuit_name: 'Circ 4A - Downtown', is_outage: true, priority_score: 9.2, failure_probability: 0.88, path: [[36.1627, -86.7816], [36.1502, -86.7854]] },
+      { id: 2, circuit_name: 'Circ 8 - East Nashville', is_outage: false, priority_score: 1.5, failure_probability: 0.12, path: [[36.1889, -86.7442], [36.1754, -86.7588]] }
+    ]);
+    setStats({
+      totalRequests: 2,
+      totalMatched: 4,
+      peopleHelped: 54,
+      circuitsRestored: 2
+    });
+  };
+
   // Fetch initial data from server (with robust mock fallbacks for live GitHub Pages)
   const fetchInitialData = async () => {
     try {
@@ -473,12 +596,12 @@ export default function App() {
 
           {/* Simulate inbound requests manually */}
           <div className="glass-panel p-5 rounded-2xl">
-            <SubmitForm />
+            <SubmitForm onLocalInject={handleLocalInject} />
           </div>
 
           {/* Quick story runners */}
           <div className="glass-panel p-4 rounded-2xl border border-red-500/10 bg-red-950/5">
-            <DemoButton />
+            <DemoButton onLocalRun={handleLocalDemoRun} onLocalReset={handleLocalDemoReset} />
           </div>
         </section>
       </main>
